@@ -35,10 +35,25 @@ def MinMaxScaler(dataX):
     
     return dataX, min_val, max_val
 
+
+# %% Random vector generation
+def random_generator(batch_size, z_dim, T_mb, Max_Seq_Len):
+    Z_mb = list()
+
+    for i in range(batch_size):
+        Temp = np.zeros([Max_Seq_Len, z_dim])
+
+        Temp_Z = np.random.uniform(0., 1, [T_mb[i], z_dim])
+
+        Temp[:T_mb[i], :] = Temp_Z
+
+        Z_mb.append(Temp_Z)
+
+    return Z_mb
+
 #%% Start TGAN function (Input: Original data, Output: Synthetic Data)
 
-def tgan (dataX, parameters):
-  
+def tgan (dataX, parameters, save_path='ckpt/tgan/tgan_model'):
     # Initialization on the Graph
     tf.reset_default_graph()
 
@@ -93,7 +108,7 @@ def tgan (dataX, parameters):
     #%% build a RNN embedding network      
     
     def embedder (X, T):      
-      
+
         with tf.variable_scope("embedder", reuse = tf.AUTO_REUSE):
             
             e_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name) for _ in range(num_layers)])
@@ -103,18 +118,18 @@ def tgan (dataX, parameters):
             H = tf.contrib.layers.fully_connected(e_outputs, hidden_dim, activation_fn=tf.nn.sigmoid)     
 
         return H
-      
+
     ##### Recovery
-    
-    def recovery (H, T):      
-      
-        with tf.variable_scope("recovery", reuse = tf.AUTO_REUSE):       
-              
+
+    def recovery (H, T):
+
+        with tf.variable_scope("recovery", reuse = tf.AUTO_REUSE):
+
             r_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name) for _ in range(num_layers)])
-                
+
             r_outputs, r_last_states = tf.nn.dynamic_rnn(r_cell, H, dtype=tf.float32, sequence_length = T)
-            
-            X_tilde = tf.contrib.layers.fully_connected(r_outputs, data_dim, activation_fn=tf.nn.sigmoid) 
+
+            X_tilde = tf.contrib.layers.fully_connected(r_outputs, data_dim, activation_fn=tf.nn.sigmoid)
 
         return X_tilde
     
@@ -160,25 +175,7 @@ def tgan (dataX, parameters):
             
             Y_hat = tf.contrib.layers.fully_connected(d_outputs, 1, activation_fn=None) 
     
-        return Y_hat   
-    
-    
-    #%% Random vector generation
-    def random_generator (batch_size, z_dim, T_mb, Max_Seq_Len):
-      
-        Z_mb = list()
-        
-        for i in range(batch_size):
-            
-            Temp = np.zeros([Max_Seq_Len, z_dim])
-            
-            Temp_Z = np.random.uniform(0., 1, [T_mb[i], z_dim])
-        
-            Temp[:T_mb[i],:] = Temp_Z
-            
-            Z_mb.append(Temp_Z)
-      
-        return Z_mb
+        return Y_hat
     
     #%% Functions
     
@@ -193,7 +190,7 @@ def tgan (dataX, parameters):
     
     # Synthetic data
     X_hat = recovery(H_hat, T)
-    
+
     # Discriminator
     Y_fake = discriminator(H_hat, T)
     Y_real = discriminator(H, T)     
@@ -242,7 +239,7 @@ def tgan (dataX, parameters):
     GS_solver = tf.train.AdamOptimizer().minimize(G_loss_S, var_list = g_vars + s_vars)   
         
     #%% Sessions    
-    
+    saver = tf.train.Saver()
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
     
@@ -366,6 +363,41 @@ def tgan (dataX, parameters):
     if (Normalization_Flag == 1):
         dataX_hat = dataX_hat * max_val
         dataX_hat = dataX_hat + min_val
+
+    save_path = saver.save(sess, save_path)
+    print(f"TGAN model saved to {save_path}")
     
     return dataX_hat
-    
+
+
+def infer_tgan(input, z_dim, sess_path='ckpt/tgan/tgan_model'):
+    batch_size = len(input)
+
+    # Maximum seq length and each seq length
+    dataT = list()
+    Max_Seq_Len = 0
+    for i in range(batch_size):
+        Max_Seq_Len = max(Max_Seq_Len, len(input[i][:,0]))
+        dataT.append(len(input[i][:,0]))
+
+    # Batch setting
+    idx = np.random.permutation(batch_size)
+    train_idx = idx[:batch_size]
+    T_mb = list(dataT[i] for i in train_idx)
+
+    Z_mb = random_generator(batch_size, z_dim, T_mb, Max_Seq_Len)
+
+    graph = tf.get_default_graph()
+
+    X = graph.get_tensor_by_name("myinput_x:0")
+    Z = graph.get_tensor_by_name("myinput_z:0")
+    T = graph.get_tensor_by_name("myinput_t:0")
+
+    X_hat = graph.get_tensor_by_name("recovery_1/fully_connected/Sigmoid:0")
+
+    saver = tf.train.Saver()
+    sess = tf.Session()
+    saver.restore(sess, sess_path)
+
+    X_hat_curr = sess.run(X_hat, feed_dict={Z: Z_mb, X: input, T: dataT})
+    return X_hat_curr

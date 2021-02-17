@@ -31,7 +31,6 @@ Outputs
 #%% Necessary Packages
 
 import numpy as np
-import sys
 
 #%% Functions
 # 1. Models
@@ -41,10 +40,9 @@ from tgan import tgan
 from data_loading import google_data_loading, sine_data_generation
 
 # 3. Metrics
-sys.path.append('metrics')
-from discriminative_score_metrics import discriminative_score_metrics
-from visualization_metrics import PCA_Analysis, tSNE_Analysis
-from predictive_score_metrics import predictive_score_metrics
+from metrics.discriminative_score_metrics import discriminative_score_metrics
+from metrics.visualization_metrics import PCA_Analysis, tSNE_Analysis
+from metrics.predictive_score_metrics import predictive_score_metrics
 
 #%% Main Parameters
 # Data
