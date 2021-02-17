@@ -126,6 +126,7 @@ dependencies:
   - snappy
   - sqlite
   - statsmodels
+  - tensorflow<=1.10.0
   - terminado
   - testpath
   - tk
