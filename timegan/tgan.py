@@ -27,10 +27,10 @@ import numpy as np
 
 def MinMaxScaler(dataX):
     
-    min_val = np.min(np.min(dataX, axis = 0), axis = 0)
+    min_val = np.min(dataX)
     dataX = dataX - min_val
     
-    max_val = np.max(np.max(dataX, axis = 0), axis = 0)
+    max_val = np.max(dataX)
     dataX = dataX / (max_val + 1e-7)
     
     return dataX, min_val, max_val
@@ -47,7 +47,7 @@ def random_generator(batch_size, z_dim, T_mb, Max_Seq_Len):
 
         Temp[:T_mb[i], :] = Temp_Z
 
-        Z_mb.append(Temp_Z)
+        Z_mb.append(Temp)
 
     return Z_mb
 
@@ -190,6 +190,8 @@ def tgan (dataX, parameters, save_path='ckpt/tgan/tgan_model'):
     
     # Synthetic data
     X_hat = recovery(H_hat, T)
+    X_hat_supervise = recovery(H_hat_supervise, T)
+    X_recover = recovery(H, T)
 
     # Discriminator
     Y_fake = discriminator(H_hat, T)
@@ -370,22 +372,21 @@ def tgan (dataX, parameters, save_path='ckpt/tgan/tgan_model'):
     return dataX_hat
 
 
-def infer_tgan(input, z_dim, sess_path='ckpt/tgan/tgan_model'):
+def get_next_timestep(input, z_dim, sess_path='ckpt/tgan/tgan_model'):
     batch_size = len(input)
 
-    # Maximum seq length and each seq length
+    # Normalize
+    input, min_val, max_val = MinMaxScaler(input.numpy())
+
+    # Each seq length
     dataT = list()
-    Max_Seq_Len = 0
     for i in range(batch_size):
-        Max_Seq_Len = max(Max_Seq_Len, len(input[i][:,0]))
-        dataT.append(len(input[i][:,0]))
+        # +1 for next timestep (TODO: Not sure if this is right...)
+        dataT.append(len(input[i][:,0]) + 1)
 
-    # Batch setting
-    idx = np.random.permutation(batch_size)
-    train_idx = idx[:batch_size]
-    T_mb = list(dataT[i] for i in train_idx)
-
-    Z_mb = random_generator(batch_size, z_dim, T_mb, Max_Seq_Len)
+    sess = tf.Session()
+    saver = tf.train.import_meta_graph(sess_path + '.meta')
+    saver.restore(sess, sess_path)
 
     graph = tf.get_default_graph()
 
@@ -393,11 +394,15 @@ def infer_tgan(input, z_dim, sess_path='ckpt/tgan/tgan_model'):
     Z = graph.get_tensor_by_name("myinput_z:0")
     T = graph.get_tensor_by_name("myinput_t:0")
 
-    X_hat = graph.get_tensor_by_name("recovery_1/fully_connected/Sigmoid:0")
+    Z_mb = random_generator(batch_size, z_dim, dataT, Z[0].shape[0])
+    input_padded = np.zeros((batch_size, Z[0].shape[0], z_dim))
+    for i in range(batch_size):
+        input_padded[i, :dataT[i], :] = input[i]
 
-    saver = tf.train.Saver()
-    sess = tf.Session()
-    saver.restore(sess, sess_path)
+    supervise = graph.get_tensor_by_name("recovery_2/fully_connected/Sigmoid:0")
 
-    X_hat_curr = sess.run(X_hat, feed_dict={Z: Z_mb, X: input, T: dataT})
-    return X_hat_curr
+    result = sess.run(supervise, feed_dict={Z: Z_mb, X: input_padded, T: dataT})
+
+    # Renormalize
+    result = result * max_val + min_val
+    return result
