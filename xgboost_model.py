@@ -1,3 +1,6 @@
+import pathlib
+import os
+
 import numpy as np
 import torch
 from xgboost import XGBClassifier, XGBRegressor
@@ -27,6 +30,8 @@ def get_model(X_train, y_train, X_test, y_test, filename, train):
     X_test = X_test.reshape(X_test.shape[0], -1)
 
     model = XGBRegressor(objective='binary:logistic')
+
+    pathlib.Path(os.path.dirname(filename)).mkdir(parents=True, exist_ok=True)
 
     if train:
         model.fit(
